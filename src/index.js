@@ -142,4 +142,12 @@ client.on(Events.InteractionCreate, async (i) => {
 });
 
 process.on("unhandledRejection", (e) => console.error("[unhandledRejection]", e));
+
+// Docker gửi SIGTERM khi tắt máy/stop; đóng gateway sạch để bot hiện offline ngay thay vì treo vài phút.
+for (const sig of ["SIGTERM", "SIGINT"]) {
+  process.on(sig, async () => {
+    await client.destroy();
+    process.exit(0);
+  });
+}
 client.login(config.token);
