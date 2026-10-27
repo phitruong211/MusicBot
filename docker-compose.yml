@@ -1,7 +1,27 @@
 services:
+  # Giải chữ ký link YouTube thay cho Lavalink (plugin tự giải đang lỗi "Must find sig function").
+  cipher:
+    image: ghcr.io/kikkia/yt-cipher:master
+    restart: unless-stopped
+    environment:
+      - OVERRIDE_PLAYER_VARIANT=IAS
+      - OVERRIDE_SCRIPT_VARIANT=IAS
+    expose:
+      - "8001" # chỉ mạng nội bộ Docker
+
+  # Lấy token ẩn danh của Spotify để đọc playlist (app Spotify mới không đọc được playlist bằng client credentials).
+  spotify-tokener:
+    image: ghcr.io/topi314/spotify-tokener:master
+    restart: unless-stopped
+    expose:
+      - "8080" # chỉ mạng nội bộ Docker
+
   lavalink:
     image: ghcr.io/lavalink-devs/lavalink:4
     restart: unless-stopped
+    depends_on:
+      - cipher
+      - spotify-tokener
     environment:
       - _JAVA_OPTIONS=-Xmx384m
       - LAVALINK_PASSWORD=${LAVALINK_PASSWORD}

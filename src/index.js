@@ -81,7 +81,8 @@ lava.on("trackStart", async (player, track) => {
   player.set("panel", msg);
 });
 
-lava.on("trackError", (player, track) => {
+lava.on("trackError", (player, track, payload) => {
+  console.error("[trackError]", track?.info.uri, payload?.exception?.message, payload?.exception?.cause);
   textChannel(player)?.send(`⚠️ Không phát được **${track?.info.title ?? "bài này"}**, đang chuyển bài.`).catch(() => {});
 });
 
