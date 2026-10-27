@@ -33,7 +33,7 @@ lavalink:
       lowPass: true
     bufferDurationMs: 400
     frameBufferDurationMs: 5000
-    # Chỉ đổi được ở đây (hoặc qua biến môi trường), không đổi được từ Discord. 10/HIGH tốn CPU nhất.
+    # Đặt cho cả node. Từ Discord chọn Opus 5/10 trong /settings: docker-compose chạy hai node (lavalink = 5, lavalink-hq = 10). 10/HIGH tốn CPU nhất.
     opusEncodingQuality: ${LAVALINK_OPUS_QUALITY:5}
     resamplingQuality: ${LAVALINK_RESAMPLING:MEDIUM}
     trackStuckThresholdMs: 10000

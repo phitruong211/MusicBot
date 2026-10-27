@@ -23,7 +23,7 @@ db.exec(`
 `);
 
 // Cột thêm sau này: bảng cũ chưa có thì ALTER (tên cột cố định ở đây, không lấy từ người dùng).
-const EXTRA = { source: "TEXT", eq: "TEXT", speed: "REAL", pitch: "REAL", color: "TEXT", announce: "INTEGER NOT NULL DEFAULT 1" };
+const EXTRA = { source: "TEXT", eq: "TEXT", speed: "REAL", pitch: "REAL", color: "TEXT", announce: "INTEGER NOT NULL DEFAULT 1", opus: "INTEGER" };
 const have = db.prepare("PRAGMA table_info(guild_settings)").all().map((c) => c.name);
 for (const [col, type] of Object.entries(EXTRA)) {
   if (!have.includes(col)) db.exec(`ALTER TABLE guild_settings ADD COLUMN ${col} ${type}`);
@@ -34,7 +34,7 @@ const COLUMNS = ["dj_role", "always_on", "autoplay", "volume", "voice_channel", 
 
 const defaults = {
   dj_role: null, always_on: 0, autoplay: 0, volume: null, voice_channel: null, text_channel: null,
-  source: null, eq: null, speed: null, pitch: null, color: null, announce: 1,
+  source: null, eq: null, speed: null, pitch: null, color: null, announce: 1, opus: null,
 };
 
 exports.getSettings = (guildId) =>

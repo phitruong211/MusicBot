@@ -40,6 +40,11 @@ Nếu lỗi kéo dài, cập nhật phiên bản `youtube-plugin` trong `lavalin
 
 ## Lệnh
 
+Mọi lệnh dùng được cả dạng `/` và dạng chữ với tiền tố `r!` (không phân biệt hoa thường), ví dụ `r!play https://...`, `r!play buồn của anh`, `r!volume 80`, `r!playlist save chill`. `r!help` liệt kê lệnh, viết tắt: `p`, `s`, `np`, `q`, `vol`, `dc`.
+Tùy chọn phụ truyền bằng cờ: `r!play lofi --source=scsearch --next`.
+
+Lệnh chữ cần bật **Message Content Intent** (Developer Portal > Bot > Privileged Gateway Intents) rồi khởi động lại bot. Chưa bật thì bot vẫn chạy bình thường với lệnh `/` và ghi cảnh báo trong log. Đổi tiền tố bằng biến `PREFIX` trong `.env`, đặt `PREFIX=` (rỗng) để tắt lệnh chữ.
+
 | Lệnh | Chức năng |
 |---|---|
 | `/play query [source] [next]` | Phát theo tên hoặc link; `next` chèn lên đầu hàng chờ |
@@ -58,8 +63,9 @@ Nếu lỗi kéo dài, cập nhật phiên bản `youtube-plugin` trong `lavalin
 ## Tùy biến nhanh
 
 - Màu embed, trạng thái bot, âm lượng mặc định, thời gian tự rời: sửa trong `.env`.
-- Chất lượng mã hóa âm thanh (Opus 0-10, resampling LOW/MEDIUM/HIGH) là cấu hình của Lavalink, không đổi được từ Discord: đặt biến `LAVALINK_OPUS_QUALITY` và `LAVALINK_RESAMPLING` (mặc định 5 / MEDIUM, cao hơn thì hay hơn chút nhưng tốn CPU). Muốn nghe sạch hơn từ Discord: `/settings source YouTube Music`.
-- `/filter` và `/settings eq|tempo` dùng chung bộ lọc của player nên ghi đè nhau.
+- Chất lượng Opus: bấm nút **🎚️ Opus** trong `/settings` để đổi giữa 5 (mặc định) và 10 cho từng server. Lavalink chỉ đặt được Opus cho cả node, nên `docker-compose.yml` chạy hai node (`lavalink` = 5, `lavalink-hq` = 10) và bot chọn node theo cài đặt; không đặt `LAVALINK_HQ_HOST` thì nút này ẩn. Resampling (LOW/MEDIUM/HIGH) vẫn chỉnh bằng biến `LAVALINK_RESAMPLING`. Muốn nghe sạch hơn: chọn nguồn YouTube Music trong `/settings`.
+- Playlist/album Spotify được đọc từ trang embed (nhanh, tối đa ~100 bài đầu rồi nạp nốt phần còn lại ở nền), bài đầu phát ngay, các bài sau tìm bản phát khi sắp tới lượt.
+- `/filter` và EQ/tốc độ/cao độ trong `/settings` dùng chung bộ lọc của player nên ghi đè nhau.
 - Thêm lệnh mới: thêm một object vào mảng `commands` trong `src/commands.js`.
 - Giao diện "đang phát": hàm `nowEmbed` và `panelRow` trong `src/music.js`.
 - Dữ liệu (playlist, cài đặt từng server) nằm ở `data/bot.db` (SQLite), nhớ sao lưu thư mục `data/`.

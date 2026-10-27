@@ -1,4 +1,14 @@
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, PermissionFlagsBits } = require("discord.js");
+const {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  EmbedBuilder,
+  ModalBuilder,
+  PermissionFlagsBits,
+  StringSelectMenuBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+} = require("discord.js");
 const config = require("./config");
 const { getSettings } = require("./db");
 
@@ -44,10 +54,18 @@ exports.applyPrefs = async (player) => {
   if (pitch) await fm.setPitch(pitch);
 };
 
+// "1:23 ▬▬🔘▬▬▬ 4:40"; null nếu không có thời lượng (livestream)
+exports.progressBar = (position, duration, width = 20) => {
+  if (!(duration > 0)) return null;
+  const at = Math.round(Math.min(1, Math.max(0, position / duration)) * width);
+  return `\`${exports.fmt(position)}\` ${"▬".repeat(at)}🔘${"▬".repeat(width - at)} \`${exports.fmt(duration)}\``;
+};
+
 exports.nowEmbed = (player, track) => {
   const { info } = track;
   const loop = { off: "Tắt", track: "Bài hiện tại", queue: "Cả hàng chờ" }[player.repeatMode];
   return new EmbedBuilder()
+    .setDescription(info.isStream ? null : exports.progressBar(player.position, info.duration))
     .setColor(exports.colorOf(player.guildId))
     .setAuthor({ name: player.paused ? "Đang tạm dừng" : "Đang phát" })
     .setTitle(info.title.slice(0, 256))
@@ -61,7 +79,63 @@ exports.nowEmbed = (player, track) => {
     .setFooter({ text: `Âm lượng ${player.volume}% • Lặp: ${loop} • Hàng chờ: ${player.queue.tracks.length} bài` });
 };
 
-exports.panelRow = (player) =>
+exports.SOURCES = [
+  { name: "YouTube", value: "ytsearch" },
+  { name: "YouTube Music", value: "ytmsearch" },
+  { name: "Spotify", value: "spsearch" },
+  { name: "SoundCloud", value: "scsearch" },
+];
+
+// Node theo chất lượng Opus của server: "hq" (Opus 10) nếu được chọn và đang kết nối, còn lại "main" (Opus 5).
+exports.nodeIdFor = (lava, guildId) =>
+  getSettings(guildId).opus === 10 && lava.nodeManager.nodes.get("hq")?.connected ? "hq" : "main";
+
+exports.SEEK_STEP_MS = 10_000;
+exports.JUMP_PERCENTS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90];
+
+exports.gotoModal = () =>
+  new ModalBuilder()
+    .setCustomId("m:gotomodal")
+    .setTitle("Tua tới vị trí")
+    .addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId("time")
+          .setLabel("Thời gian (vd 1:30, 90 hoặc 1:02:03)")
+          .setStyle(TextInputStyle.Short)
+          .setMaxLength(8)
+          .setRequired(true),
+      ),
+    );
+
+exports.panelRows = (player) => {
+  const info = player.queue.current?.info;
+  const rows = [mainButtons(player)];
+  // Livestream / bài không tua được thì không hiện phần tua.
+  if (info?.isSeekable && !info.isStream) {
+    rows.push(
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("m:back").setEmoji("⏪").setLabel("-10s").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId("m:fwd").setEmoji("⏩").setLabel("+10s").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId("m:goto").setEmoji("🎯").setLabel("Tới…").setStyle(ButtonStyle.Secondary),
+      ),
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId("m:jump")
+          .setPlaceholder("⏱️ Nhảy tới vị trí…")
+          .addOptions(
+            exports.JUMP_PERCENTS.map((p) => ({
+              label: `${exports.fmt((info.duration * p) / 100)}  (${p}%)`,
+              value: String(p),
+            })),
+          ),
+      ),
+    );
+  }
+  return rows;
+};
+
+const mainButtons = (player) =>
   new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId("m:pause")

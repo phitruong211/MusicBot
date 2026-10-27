@@ -1,7 +1,23 @@
 const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder, MessageFlags } = require("discord.js");
 const config = require("./config");
 const db = require("./db");
-const { fmt, parseTime, nowEmbed, panelRow, isDJ, scheduleLeave, colorOf, EQ_PRESETS, applyPrefs } = require("./music");
+const {
+  SOURCES,
+  JUMP_PERCENTS,
+  SEEK_STEP_MS,
+  fmt,
+  parseTime,
+  nowEmbed,
+  panelRows,
+  gotoModal,
+  isDJ,
+  scheduleLeave,
+  colorOf,
+  applyPrefs,
+  nodeIdFor,
+} = require("./music");
+const settings = require("./settings");
+const lazy = require("./lazy");
 
 // ---------- helpers ----------
 const say = (i, content, ephemeral = false) => {
@@ -37,6 +53,7 @@ async function joinPlayer(i) {
     textChannelId: i.channelId,
     selfDeaf: true,
     volume: db.getSettings(i.guildId).volume ?? config.defaultVolume,
+    node: nodeIdFor(lava, i.guildId),
   });
   if (!player.connected) await player.connect();
   if (created) await applyPrefs(player).catch(() => {}); // chỉ là hiệu ứng, lỗi thì vẫn phát nhạc bình thường
@@ -46,12 +63,16 @@ async function joinPlayer(i) {
 const startIfIdle = (player) => (!player.playing && !player.paused ? player.play() : null);
 const isUrl = (q) => /^https?:\/\//.test(q);
 
-const SOURCES = [
-  { name: "YouTube", value: "ytsearch" },
-  { name: "YouTube Music", value: "ytmsearch" },
-  { name: "Spotify", value: "spsearch" },
-  { name: "SoundCloud", value: "scsearch" },
-];
+// Trang embed Spotify cắt ở ~100 bài: tải phần còn lại bằng Lavalink ở nền rồi nối vào hàng chờ (nếu player vẫn còn).
+function appendRest(player, url, alreadyAdded, requester) {
+  player
+    .search({ query: url }, requester)
+    .then((full) => {
+      const rest = full.tracks.slice(alreadyAdded);
+      if (rest.length && player.LavalinkManager.getPlayer(player.guildId) === player) return player.queue.add(rest);
+    })
+    .catch(() => {});
+}
 
 const FILTERS = {
   off: async () => {},
@@ -84,14 +105,27 @@ const commands = [
 
       const query = i.options.getString("query");
       const source = i.options.getString("source") ?? db.getSettings(i.guildId).source ?? "ytsearch";
-      const res = await player.search(isUrl(query) ? { query } : { query, source }, i.user);
 
-      if (res.loadType === "error" || res.loadType === "empty" || !res.tracks.length) {
+      // Playlist/album Spotify: lấy danh sách từ trang embed (nhanh), phát bài đầu ngay, các bài sau tìm dần khi tới lượt.
+      const list = isUrl(query) ? await lazy.spotifyList(query) : null;
+      let tracks, isPlaylist, title;
+      if (list) {
+        const found = await lazy.resolveHead(player, lazy.lazyTracks(player.LavalinkManager, list.tracks, i.user, source === "spsearch" ? "ytsearch" : source));
+        [tracks, isPlaylist, title] = [found, true, list.name];
+        if (list.truncated && found.length) appendRest(player, query, list.tracks.length, i.user);
+      } else {
+        const res = await player.search(isUrl(query) ? { query } : { query, source }, i.user);
+        if (res.loadType !== "error" && res.loadType !== "empty") {
+          isPlaylist = res.loadType === "playlist";
+          tracks = isPlaylist ? res.tracks : res.tracks.slice(0, 1);
+          title = res.playlist?.title;
+        }
+      }
+
+      if (!tracks?.length) {
         if (created) await player.destroy("Không tìm thấy bài");
         return say(i, "❌ Không tìm thấy bài nào.");
       }
-      const isPlaylist = res.loadType === "playlist";
-      const tracks = isPlaylist ? res.tracks : [res.tracks[0]];
       if (i.options.getBoolean("next")) await player.queue.splice(0, 0, tracks);
       else await player.queue.add(tracks);
       await startIfIdle(player);
@@ -99,7 +133,7 @@ const commands = [
       return say(
         i,
         isPlaylist
-          ? `📃 Đã thêm playlist **${res.playlist?.title ?? "?"}** (${tracks.length} bài)`
+          ? `📃 Đã thêm playlist **${title ?? "?"}** (${tracks.length} bài)`
           : `➕ Đã thêm **${tracks[0].info.title}**`,
       );
     },
@@ -176,13 +210,7 @@ const commands = [
       if (!player) return;
       const track = player.queue.current;
       if (!track) return fail(i, "Chưa có bài nào đang phát.");
-      const embed = nowEmbed(player, track);
-      if (!track.info.isStream) {
-        const ratio = Math.min(1, player.position / track.info.duration);
-        const at = Math.round(ratio * 20);
-        embed.setDescription(`\`${fmt(player.position)}\` ${"▬".repeat(at)}🔘${"▬".repeat(20 - at)} \`${fmt(track.info.duration)}\``);
-      }
-      return i.reply({ embeds: [embed], components: [panelRow(player)] });
+      return i.reply({ embeds: [nowEmbed(player, track)], components: panelRows(player) });
     },
   },
   {
@@ -340,108 +368,10 @@ const commands = [
   {
     data: new SlashCommandBuilder()
       .setName("settings")
-      .setDescription("Tùy chỉnh bot cho server này")
-      .addSubcommand((s) => s.setName("show").setDescription("Xem cài đặt hiện tại"))
-      .addSubcommand((s) =>
-        s
-          .setName("source")
-          .setDescription("Nguồn mặc định khi /play theo tên (YouTube Music thường sạch tiếng hơn)")
-          .addStringOption((o) => o.setName("name").setDescription("Nguồn").setRequired(true).addChoices(...SOURCES)),
-      )
-      .addSubcommand((s) =>
-        s
-          .setName("eq")
-          .setDescription("Âm sắc (equalizer)")
-          .addStringOption((o) =>
-            o
-              .setName("preset")
-              .setDescription("Kiểu âm")
-              .setRequired(true)
-              .addChoices(...Object.keys(EQ_PRESETS).map((k) => ({ name: k, value: k }))),
-          ),
-      )
-      .addSubcommand((s) =>
-        s
-          .setName("tempo")
-          .setDescription("Tốc độ và cao độ (vd slowed: speed 0.85, nightcore nhẹ: speed 1.2 pitch 1.2)")
-          .addNumberOption((o) => o.setName("speed").setDescription("0.5-2, 1 = bình thường").setMinValue(0.5).setMaxValue(2))
-          .addNumberOption((o) => o.setName("pitch").setDescription("0.5-2, 1 = bình thường").setMinValue(0.5).setMaxValue(2)),
-      )
-      .addSubcommand((s) =>
-        s
-          .setName("color")
-          .setDescription("Màu embed")
-          .addStringOption((o) => o.setName("hex").setDescription("Mã màu, vd #ff6b9d").setRequired(true)),
-      )
-      .addSubcommand((s) =>
-        s
-          .setName("announce")
-          .setDescription("Bật/tắt tin nhắn \"Đang phát\" mỗi khi sang bài mới")
-          .addBooleanOption((o) => o.setName("on").setDescription("Bật hay tắt").setRequired(true)),
-      )
-      .addSubcommand((s) => s.setName("reset").setDescription("Đưa tất cả tùy chỉnh về mặc định")),
+      .setDescription("Bảng cài đặt: nguồn tìm nhạc, âm sắc, tốc độ, màu, thông báo..."),
     async run(i) {
       if (!isDJ(i.member)) return fail(i, "Lệnh này chỉ dành cho role DJ.");
-      const sub = i.options.getSubcommand();
-      const set = (col, value) => db.setSetting(i.guildId, col, value);
-      const player = i.client.lavalink.getPlayer(i.guildId);
-
-      if (sub === "show") {
-        const s = db.getSettings(i.guildId);
-        const on = (v) => (v ? "Bật" : "Tắt");
-        const lines = [
-          `Nguồn mặc định: **${SOURCES.find((x) => x.value === (s.source ?? "ytsearch")).name}**`,
-          `EQ: **${s.eq ?? "flat"}**`,
-          `Tốc độ / cao độ: **${s.speed ?? 1}x / ${s.pitch ?? 1}x**`,
-          `Màu embed: **#${s.color ?? config.color.toString(16).padStart(6, "0")}**`,
-          `Thông báo bài mới: **${on(s.announce)}**`,
-          `Âm lượng: **${s.volume ?? config.defaultVolume}%** • Autoplay: **${on(s.autoplay)}** • 24/7: **${on(s.always_on)}** • DJ: ${s.dj_role ? `<@&${s.dj_role}>` : "ai cũng được"}`,
-        ];
-        const embed = new EmbedBuilder()
-          .setColor(colorOf(i.guildId))
-          .setTitle("Cài đặt server")
-          .setDescription(lines.join("\n"))
-          .setFooter({ text: "Chất lượng Opus/resample chỉnh ở Lavalink: LAVALINK_OPUS_QUALITY, LAVALINK_RESAMPLING" });
-        return i.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
-      }
-
-      if (sub === "source") {
-        const name = i.options.getString("name");
-        set("source", name);
-        return say(i, `🔎 Nguồn mặc định: **${SOURCES.find((x) => x.value === name).name}**`);
-      }
-      if (sub === "eq") {
-        const preset = i.options.getString("preset");
-        set("eq", preset);
-        if (player) await applyPrefs(player);
-        return say(i, `🎛️ EQ: **${preset}**${player ? "" : " (áp dụng từ lần phát tới)"}`);
-      }
-      if (sub === "tempo") {
-        const speed = i.options.getNumber("speed");
-        const pitch = i.options.getNumber("pitch");
-        if (speed === null && pitch === null) return fail(i, "Nhập ít nhất speed hoặc pitch.");
-        if (speed !== null) set("speed", speed);
-        if (pitch !== null) set("pitch", pitch);
-        if (player) await applyPrefs(player);
-        return say(i, `⏱️ Tốc độ: **${speed ?? db.getSettings(i.guildId).speed ?? 1}x** • Cao độ: **${pitch ?? db.getSettings(i.guildId).pitch ?? 1}x**`);
-      }
-      if (sub === "color") {
-        const hex = i.options.getString("hex").trim();
-        if (!/^#?[0-9a-f]{6}$/i.test(hex)) return fail(i, "Mã màu không hợp lệ, ví dụ: #ff6b9d");
-        set("color", hex.replace("#", "").toLowerCase());
-        return i.reply({ embeds: [new EmbedBuilder().setColor(colorOf(i.guildId)).setDescription("🎨 Đã đổi màu embed.")] });
-      }
-      if (sub === "announce") {
-        const value = i.options.getBoolean("on");
-        set("announce", value ? 1 : 0);
-        return say(i, `📢 Thông báo bài mới: **${value ? "BẬT" : "TẮT"}**`);
-      }
-
-      // reset
-      for (const col of ["source", "eq", "speed", "pitch", "color"]) set(col, null);
-      set("announce", 1);
-      if (player) await player.filterManager.resetFilters();
-      return say(i, "♻️ Đã đưa tùy chỉnh về mặc định.");
+      return i.reply({ ...settings.view(i.guildId), flags: MessageFlags.Ephemeral });
     },
   },
   {
@@ -495,14 +425,13 @@ const commands = [
       const joined = await joinPlayer(i);
       if (!joined) return;
       const { player, created } = joined;
-      let added = 0;
-      for (const t of saved.slice(0, 50)) {
-        const res = await player.search({ query: t.uri }, i.user).catch(() => null);
-        if (!res?.tracks.length) continue;
-        await player.queue.add(res.tracks[0]);
-        added++;
-        await startIfIdle(player); // nghe được ngay từ bài đầu, phần còn lại nạp dần
+      // Bài đầu tìm ngay để phát liền, các bài sau chỉ giữ link và tìm khi tới lượt.
+      const queued = await lazy.resolveHead(player, lazy.lazyTracks(player.LavalinkManager, saved, i.user));
+      if (queued.length) {
+        await player.queue.add(queued);
+        await startIfIdle(player);
       }
+      const added = queued.length;
       if (!added && created) await player.destroy("Playlist rỗng");
       return say(i, added ? `📂 Đã nạp **${added}** bài từ playlist **${name}**` : "❌ Không nạp được bài nào.");
     },
@@ -522,24 +451,43 @@ exports.autocomplete = async (i) => {
   return i.respond(choices);
 };
 
-// Các nút dưới tin nhắn "Đang phát"
-exports.button = async (i) => {
+// Nút, menu và ô nhập (customId "m:...") dưới tin nhắn "Đang phát"
+exports.panel = async (i) => {
   const player = await guard(i);
   if (!player) return;
   const action = i.customId.slice(2);
   const nextLoop = { off: "track", track: "queue", queue: "off" };
+  const info = player.queue.current?.info;
+  const SEEK_ACTIONS = ["back", "fwd", "goto", "jump", "gotomodal"];
 
+  if (SEEK_ACTIONS.includes(action) && !(info?.isSeekable && !info.isStream)) return fail(i, "Bài này không tua được.");
+  // tua quá cuối bài thì dừng lại ở 1s trước khi hết, không bỏ qua bài
+  const seekTo = (ms) => player.seek(Math.min(Math.max(0, ms), info.duration - 1000));
+
+  if (action === "goto") return i.showModal(gotoModal());
   if (action === "pause") await (player.paused ? player.resume() : player.pause());
   else if (action === "loop") await player.setRepeatMode(nextLoop[player.repeatMode]);
   else if (action === "shuffle") await player.queue.shuffle();
   else if (action === "skip") await (player.queue.tracks.length ? player.skip() : player.stopPlaying(true, false));
   else if (action === "stop") {
     await (db.getSettings(i.guildId).always_on ? player.stopPlaying(true, false) : player.destroy("Nút dừng"));
+  } else if (action === "back") await seekTo(player.position - SEEK_STEP_MS);
+  else if (action === "fwd") await seekTo(player.position + SEEK_STEP_MS);
+  else if (action === "jump") {
+    const percent = Number(i.values[0]);
+    if (!JUMP_PERCENTS.includes(percent)) return fail(i, "Vị trí không hợp lệ.");
+    await seekTo((info.duration * percent) / 100);
+  } else if (action === "gotomodal") {
+    const ms = parseTime(i.fields.getTextInputValue("time"));
+    if (ms === null || ms >= info.duration) return fail(i, "Thời gian không hợp lệ, ví dụ: 1:30 hoặc 90.");
+    await seekTo(ms);
   }
 
   const current = player.queue.current;
-  if (current && ["pause", "loop", "shuffle"].includes(action)) {
-    return i.update({ embeds: [nowEmbed(player, current)], components: [panelRow(player)] });
+  if (current && ["pause", "loop", "shuffle", "back", "fwd", "jump", "gotomodal"].includes(action)) {
+    return i.update({ embeds: [nowEmbed(player, current)], components: panelRows(player) });
   }
   return i.deferUpdate();
 };
+
+exports.settingsPanel = settings.handle;
