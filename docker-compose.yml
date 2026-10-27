@@ -1,0 +1,28 @@
+services:
+  lavalink:
+    image: ghcr.io/lavalink-devs/lavalink:4
+    restart: unless-stopped
+    environment:
+      - _JAVA_OPTIONS=-Xmx384m
+      - LAVALINK_PASSWORD=${LAVALINK_PASSWORD}
+      - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID:-}
+      - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET:-}
+      - SPOTIFY_COUNTRY=${SPOTIFY_COUNTRY:-VN}
+      - YT_OAUTH_ENABLED=${YT_OAUTH_ENABLED:-false}
+      - YT_REFRESH_TOKEN=${YT_REFRESH_TOKEN:-}
+      - YT_OAUTH_SKIP_INIT=${YT_OAUTH_SKIP_INIT:-false}
+    volumes:
+      - ./lavalink/application.yml:/opt/Lavalink/application.yml:ro
+    expose:
+      - "2333" # chỉ mạng nội bộ Docker, không mở ra ngoài
+
+  bot:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      - lavalink
+    env_file: .env
+    environment:
+      - LAVALINK_HOST=lavalink
+    volumes:
+      - ./data:/app/data

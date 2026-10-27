@@ -1,0 +1,57 @@
+services:
+  # Lavalink: mạng nội bộ Render, không mở ra internet
+  - type: pserv
+    name: lavalink
+    runtime: docker
+    dockerfilePath: ./lavalink/Dockerfile
+    dockerContext: ./lavalink
+    plan: starter # 512MB; nếu bị OOM hoặc giật, nâng lên standard (2GB) và tăng -Xmx
+    envVars:
+      - key: _JAVA_OPTIONS
+        value: -Xmx256m
+      - key: LAVALINK_PASSWORD
+        generateValue: true
+      - key: LAVALINK_OPUS_QUALITY # 0-10, cao = hay hơn nhưng tốn CPU
+        value: "5"
+      - key: LAVALINK_RESAMPLING # LOW | MEDIUM | HIGH
+        value: MEDIUM
+      - key: SPOTIFY_CLIENT_ID
+        sync: false
+      - key: SPOTIFY_CLIENT_SECRET
+        sync: false
+      - key: SPOTIFY_COUNTRY
+        value: VN
+      - key: YT_OAUTH_ENABLED
+        value: "true"
+      - key: YT_REFRESH_TOKEN
+        sync: false
+      - key: YT_OAUTH_SKIP_INIT
+        value: "false"
+
+  - type: worker
+    name: music-bot
+    runtime: docker
+    plan: starter
+    disk: # SQLite (playlist, cài đặt server); không có disk thì mất dữ liệu mỗi lần deploy
+      name: data
+      mountPath: /app/data
+      sizeGB: 1
+    envVars:
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: CLIENT_ID
+        sync: false
+      - key: GUILD_ID
+        sync: false
+      - key: LAVALINK_HOST
+        fromService:
+          type: pserv
+          name: lavalink
+          property: host
+      - key: LAVALINK_PORT
+        value: "2333"
+      - key: LAVALINK_PASSWORD
+        fromService:
+          type: pserv
+          name: lavalink
+          envVarKey: LAVALINK_PASSWORD

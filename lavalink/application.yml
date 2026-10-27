@@ -1,0 +1,86 @@
+server:
+  port: 2333
+  address: 0.0.0.0
+
+lavalink:
+  plugins:
+    - dependency: "dev.lavalink.youtube:youtube-plugin:1.18.2"
+      snapshot: false
+    - dependency: "com.github.topi314.lavasrc:lavasrc-plugin:4.8.3"
+      snapshot: false
+  server:
+    password: "${LAVALINK_PASSWORD:youshallnotpass}"
+    sources:
+      youtube: false # đã thay bằng youtube-plugin
+      soundcloud: true
+      bandcamp: true
+      twitch: true
+      vimeo: true
+      http: true
+      local: false
+    filters:
+      volume: true
+      equalizer: true
+      karaoke: true
+      timescale: true
+      tremolo: true
+      vibrato: true
+      distortion: true
+      rotation: true
+      channelMix: true
+      lowPass: true
+    bufferDurationMs: 400
+    frameBufferDurationMs: 5000
+    # Chỉ đổi được ở đây (hoặc qua biến môi trường), không đổi được từ Discord. 10/HIGH tốn CPU nhất.
+    opusEncodingQuality: ${LAVALINK_OPUS_QUALITY:5}
+    resamplingQuality: ${LAVALINK_RESAMPLING:MEDIUM}
+    trackStuckThresholdMs: 10000
+    useSeekGhosting: true
+    youtubePlaylistLoadLimit: 6
+    playerUpdateInterval: 5
+    youtubeSearchEnabled: true
+    soundcloudSearchEnabled: true
+
+plugins:
+  youtube:
+    enabled: true
+    allowSearch: true
+    allowDirectVideoIds: true
+    allowDirectPlaylistIds: true
+    # Danh sách client có thể thay đổi theo từng bản youtube-source,
+    # xem README của plugin nếu thấy lỗi "client not found".
+    clients:
+      - MUSIC
+      - ANDROID_VR
+      - WEB
+      - WEBEMBEDDED
+      - TVHTML5_SIMPLY
+    oauth:
+      enabled: ${YT_OAUTH_ENABLED:false}
+      refreshToken: "${YT_REFRESH_TOKEN:}"
+      skipInitialization: ${YT_OAUTH_SKIP_INIT:false}
+
+  lavasrc:
+    # Spotify không phát audio: tìm bản tương ứng trên YouTube theo ISRC rồi theo tên.
+    providers:
+      - "ytsearch:\"%ISRC%\""
+      - "ytsearch:%QUERY%"
+    sources:
+      spotify: true
+      applemusic: false
+      deezer: false
+      yandexmusic: false
+      flowerytts: false
+      youtube: false
+    spotify:
+      clientId: "${SPOTIFY_CLIENT_ID:}"
+      clientSecret: "${SPOTIFY_CLIENT_SECRET:}"
+      countryCode: "${SPOTIFY_COUNTRY:VN}"
+      playlistLoadLimit: 6
+      albumLoadLimit: 6
+      resolveArtistsInSearch: true
+
+logging:
+  level:
+    root: INFO
+    lavalink: INFO
