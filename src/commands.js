@@ -3,13 +3,10 @@ const config = require("./config");
 const db = require("./db");
 const {
   SOURCES,
-  JUMP_PERCENTS,
-  SEEK_STEP_MS,
   fmt,
   parseTime,
   nowEmbed,
   panelRows,
-  gotoModal,
   isDJ,
   scheduleLeave,
   colorOf,
@@ -451,40 +448,22 @@ exports.autocomplete = async (i) => {
   return i.respond(choices);
 };
 
-// Nút, menu và ô nhập (customId "m:...") dưới tin nhắn "Đang phát"
+// Nút (customId "m:...") dưới tin nhắn "Đang phát"
 exports.panel = async (i) => {
   const player = await guard(i);
   if (!player) return;
   const action = i.customId.slice(2);
   const nextLoop = { off: "track", track: "queue", queue: "off" };
-  const info = player.queue.current?.info;
-  const SEEK_ACTIONS = ["back", "fwd", "goto", "jump", "gotomodal"];
 
-  if (SEEK_ACTIONS.includes(action) && !(info?.isSeekable && !info.isStream)) return fail(i, "Bài này không tua được.");
-  // tua quá cuối bài thì dừng lại ở 1s trước khi hết, không bỏ qua bài
-  const seekTo = (ms) => player.seek(Math.min(Math.max(0, ms), info.duration - 1000));
-
-  if (action === "goto") return i.showModal(gotoModal());
   if (action === "pause") await (player.paused ? player.resume() : player.pause());
   else if (action === "loop") await player.setRepeatMode(nextLoop[player.repeatMode]);
-  else if (action === "shuffle") await player.queue.shuffle();
   else if (action === "skip") await (player.queue.tracks.length ? player.skip() : player.stopPlaying(true, false));
   else if (action === "stop") {
     await (db.getSettings(i.guildId).always_on ? player.stopPlaying(true, false) : player.destroy("Nút dừng"));
-  } else if (action === "back") await seekTo(player.position - SEEK_STEP_MS);
-  else if (action === "fwd") await seekTo(player.position + SEEK_STEP_MS);
-  else if (action === "jump") {
-    const percent = Number(i.values[0]);
-    if (!JUMP_PERCENTS.includes(percent)) return fail(i, "Vị trí không hợp lệ.");
-    await seekTo((info.duration * percent) / 100);
-  } else if (action === "gotomodal") {
-    const ms = parseTime(i.fields.getTextInputValue("time"));
-    if (ms === null || ms >= info.duration) return fail(i, "Thời gian không hợp lệ, ví dụ: 1:30 hoặc 90.");
-    await seekTo(ms);
   }
 
   const current = player.queue.current;
-  if (current && ["pause", "loop", "shuffle", "back", "fwd", "jump", "gotomodal"].includes(action)) {
+  if (current && ["pause", "loop"].includes(action)) {
     return i.update({ embeds: [nowEmbed(player, current)], components: panelRows(player) });
   }
   return i.deferUpdate();
