@@ -3,6 +3,7 @@ const config = require("./config");
 const db = require("./db");
 const {
   SOURCES,
+  SEEK_STEP_MS,
   fmt,
   parseTime,
   nowEmbed,
@@ -454,8 +455,14 @@ exports.panel = async (i) => {
   if (!player) return;
   const action = i.customId.slice(2);
   const nextLoop = { off: "track", track: "queue", queue: "off" };
+  const info = player.queue.current?.info;
 
-  if (action === "pause") await (player.paused ? player.resume() : player.pause());
+  if (action === "back" || action === "fwd") {
+    if (!(info?.isSeekable && !info.isStream)) return fail(i, "Bài này không tua được.");
+    // tua quá cuối bài thì dừng lại ở 1s trước khi hết, không bỏ qua bài
+    const step = action === "back" ? -SEEK_STEP_MS : SEEK_STEP_MS;
+    await player.seek(Math.min(Math.max(0, player.position + step), info.duration - 1000));
+  } else if (action === "pause") await (player.paused ? player.resume() : player.pause());
   else if (action === "loop") await player.setRepeatMode(nextLoop[player.repeatMode]);
   else if (action === "skip") await (player.queue.tracks.length ? player.skip() : player.stopPlaying(true, false));
   else if (action === "stop") {
@@ -463,7 +470,7 @@ exports.panel = async (i) => {
   }
 
   const current = player.queue.current;
-  if (current && ["pause", "loop"].includes(action)) {
+  if (current && ["pause", "loop", "back", "fwd"].includes(action)) {
     return i.update({ embeds: [nowEmbed(player, current)], components: panelRows(player) });
   }
   return i.deferUpdate();

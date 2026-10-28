@@ -69,21 +69,36 @@ exports.SOURCES = [
 exports.nodeIdFor = (lava, guildId) =>
   getSettings(guildId).opus === 10 && lava.nodeManager.nodes.get("hq")?.connected ? "hq" : "main";
 
-// Một hàng nút duy nhất; tua và xáo trộn dùng lệnh /seek, /shuffle.
-exports.panelRows = (player) => [
-  new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId("m:pause")
-      .setEmoji(player.paused ? "▶️" : "⏸️")
-      .setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId("m:skip").setEmoji("⏭️").setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder()
-      .setCustomId("m:loop")
-      .setEmoji("🔁")
-      .setStyle(player.repeatMode === "off" ? ButtonStyle.Secondary : ButtonStyle.Success),
-    new ButtonBuilder().setCustomId("m:stop").setEmoji("⏹️").setStyle(ButtonStyle.Danger),
-  ),
-];
+exports.SEEK_STEP_MS = 10_000;
+
+// Xáo trộn và tua tới vị trí bất kỳ dùng lệnh /shuffle, /seek.
+exports.panelRows = (player) => {
+  const info = player.queue.current?.info;
+  const rows = [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("m:pause")
+        .setEmoji(player.paused ? "▶️" : "⏸️")
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId("m:skip").setEmoji("⏭️").setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId("m:loop")
+        .setEmoji("🔁")
+        .setStyle(player.repeatMode === "off" ? ButtonStyle.Secondary : ButtonStyle.Success),
+      new ButtonBuilder().setCustomId("m:stop").setEmoji("⏹️").setStyle(ButtonStyle.Danger),
+    ),
+  ];
+  // Livestream / bài không tua được thì không hiện nút tua.
+  if (info?.isSeekable && !info.isStream) {
+    rows.push(
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("m:back").setEmoji("⏪").setLabel("-10s").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId("m:fwd").setEmoji("⏩").setLabel("+10s").setStyle(ButtonStyle.Secondary),
+      ),
+    );
+  }
+  return rows;
+};
 
 // Không đặt role DJ = ai cũng điều khiển được.
 exports.isDJ = (member) => {
