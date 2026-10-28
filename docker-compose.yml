@@ -5,8 +5,9 @@ x-lavalink: &lavalink
     - cipher
     - spotify-tokener
   environment: &lavalink-env
-    _JAVA_OPTIONS: -Xmx384m
+    _JAVA_OPTIONS: -Xmx1g
     LAVALINK_PASSWORD: ${LAVALINK_PASSWORD}
+    LAVALINK_RESAMPLING: ${LAVALINK_RESAMPLING:-HIGH}
     SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID:-}
     SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET:-}
     SPOTIFY_COUNTRY: ${SPOTIFY_COUNTRY:-VN}

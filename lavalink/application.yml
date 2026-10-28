@@ -31,7 +31,7 @@ lavalink:
       rotation: true
       channelMix: true
       lowPass: true
-    bufferDurationMs: 400
+    bufferDurationMs: 1000 # chịu được khoảng khựng GC/CPU bận lâu hơn (mặc định 400)
     frameBufferDurationMs: 5000
     # Đặt cho cả node. Từ Discord chọn Opus 5/10 trong /settings: docker-compose chạy hai node (lavalink = 5, lavalink-hq = 10). 10/HIGH tốn CPU nhất.
     opusEncodingQuality: ${LAVALINK_OPUS_QUALITY:5}
